@@ -50,6 +50,16 @@ footer{max-width:860px;margin:0 auto;text-align:center;color:var(--mut);font-siz
 footer a{text-decoration:underline}
 .by{font:700 22px/1.4 var(--ui);color:var(--gold);padding:6px 0 4px}
 footer #src{font-size:13px}
+.bar [data-tab]{font-size:16px;padding:0 14px}
+.bar [data-tab].on{background:#ecd9a0;color:#0b3b2e}
+.bar .t1{margin-inline-start:auto}
+.hd{padding:14px 0;border-bottom:1px solid var(--line)}
+.hn{display:inline-block;color:var(--gold);font:700 15px var(--ui)}
+.hd p{margin:0;font:400 calc(var(--fs)*.78)/2.1 var(--ui);text-align:justify}
+.sh.sm{font:700 22px/1.7 var(--ui)}
+.aud{display:flex;flex-direction:column;gap:8px;margin:0 0 14px}
+.aud select{font:inherit;font-size:17px;color:var(--ink);background:var(--page);border:1px solid var(--gold);border-radius:6px;padding:6px 10px}
+.aud audio{width:100%}
 </style>
 </head>
 <body>
@@ -57,6 +67,7 @@ footer #src{font-size:13px}
   <button id="minus" aria-label="نڤیسین بچووک بکە">A−</button>
   <button id="plus" aria-label="نڤیسین مەزن بکە">A+</button>
   <button id="theme" aria-label="گوهارتنا ڕووناکی و تاریێ">◐</button>
+  <button class="t1" data-tab="q" data-go="0">قورئان</button><button data-tab="h" data-go="h">حەدیس</button>
 </div>
 <header class="hero" id="hero">
   <h1>القرآن الكريم</h1>
@@ -69,8 +80,9 @@ footer #src{font-size:13px}
   <article id="reader" class="sheet" hidden></article>
 </main>
 <footer>
-  <div class="by" dir="ltr">@shahw8n</div>
+  <div class="by" dir="ltr">shahw8n@</div>
   <div id="src"></div>
+  <div id="hsrc" hidden>حەدیس: <a href="https://github.com/fawazahmed0/hadith-api" target="_blank" rel="noopener">hadith-api</a></div>
 </footer>
 <script type="text/plain" id="qdata">1|1|بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
 1|2|ٱلْحَمْدُ لِلَّهِ رَبِّ ٱلْعَـٰلَمِينَ
@@ -6395,6 +6407,7 @@ function done(s,c,src){
   Q=s;
   $("#load").hidden=true;
   $("#src").innerHTML=(src==="file"?`دەقێ قورئانێ: <a href="https://tanzil.net" target="_blank" rel="noopener">Tanzil.net</a>`:`دەقێ قورئانێ: <a href="https://alquran.cloud" target="_blank" rel="noopener">AlQuran Cloud</a>`);
+  $("#src").innerHTML+=`<div>دەنگ: <a href="https://mp3quran.net" target="_blank" rel="noopener">mp3quran.net</a></div>`;
   list();route();
 }
 function fail(c){
@@ -6421,20 +6434,98 @@ function read(n){
   const bis=(n!==1&&n!==9)?`<p class="bis">${Q[1][1]}</p>`:"";
   const body=Q[n].filter(Boolean).map((t,i)=>`${t}<span class="end">${AR(i+1)}</span>`).join(" ");
   $("#reader").innerHTML=`<a class="back" href="#" data-go="0">هەمی سورەت</a>
-<h2 class="sh">سورة ${NAMES[n-1]}</h2>${bis}<p class="txt">${body}</p>
+<h2 class="sh">سورة ${NAMES[n-1]}</h2><div class="aud"><select id="rc" aria-label="قاری"></select><audio id="au" controls preload="none"></audio><small id="aerr" class="muted"></small></div>${bis}<p class="txt">${body}</p>
 <nav class="pn">${n>1?`<a href="#${n-1}" data-go="${n-1}">‹ سورەتا پێشتر</a>`:"<i></i>"}${n<114?`<a href="#${n+1}" data-go="${n+1}">سورەتا پاشتر ›</a>`:"<i></i>"}</nav>`;
   document.title="سورة "+NAMES[n-1]+" — قورئانا پیرۆز";
+  CUR=n;audioInit(n);
 }
+let REC=null,CUR=0,AUTO=false;
+const FB={id:"fb",name:"مشاری العفاسی",L:{has:()=>true}};
+const PRI=["العفاسي","السديس","الشريم","المعيقلي","الغامدي","عبد الباسط","المنشاوي","الحصري","العجمي","الدوسري","الحذيفي"];
+const rank=s=>{const i=PRI.findIndex(p=>s.includes(p));return i<0?99:i};
+async function loadRec(){
+  if(REC)return REC;
+  try{
+    const r=await Promise.race([fetch("https://www.mp3quran.net/api/v3/reciters?language=ar&rewaya=1"),new Promise((_,j)=>setTimeout(()=>j(0),8000))]);
+    const j=await r.json(),out=[];
+    for(const x of j.reciters){const hs=x.moshaf.filter(m=>/حفص/.test(m.name)&&m.server&&m.surah_list);
+      for(const m of hs)out.push({id:String(m.id),name:x.name+(hs.length>1?" — "+m.name.replace(/^حفص عن عاصم\s*-\s*/,""):""),server:m.server,L:new Set(m.surah_list.split(","))})}
+    return REC=out.sort((a,b)=>rank(a.name)-rank(b.name));
+  }catch(e){return []}
+}
+const aurl=(r,n)=>r.server?r.server+String(n).padStart(3,"0")+".mp3":`https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy/${n}.mp3`;
+async function audioInit(n){
+  try{
+    const sel=$("#rc"),au=$("#au");if(!sel||!au)return;
+    const R=await loadRec();if(CUR!==n)return;
+    let list=R.filter(r=>r.L.has(String(n)));if(!list.length)list=[FB];
+    let i=list.findIndex(r=>r.id===S.get("rc"));if(i<0)i=list.findIndex(r=>/العفاسي/.test(r.name));if(i<0)i=0;
+    sel.innerHTML=list.map((r,k)=>`<option value="${k}"${k===i?" selected":""}>${esc(r.name)}</option>`).join("");
+    const set=(k,play)=>{$("#aerr").textContent="";au.src=aurl(list[k],n);S.set("rc",list[k].id);if(play)au.play().catch(()=>{})};
+    sel.onchange=()=>set(+sel.value,!au.paused);
+    au.onerror=()=>{$("#aerr").textContent="دەنگ نەهاتە بارکرن. قاریەکێ دی هەلبژێرە."};
+    au.onended=()=>{if(n<114){AUTO=true;go(n+1)}};
+    set(i,AUTO);AUTO=false;
+  }catch(e){}
+}
+let HT=0,HLOG=[];
+const HB=["https://cdn.jsdelivr.net/gh/fawazahmed0/hadith-api@1","https://fastly.jsdelivr.net/gh/fawazahmed0/hadith-api@1","https://gcore.jsdelivr.net/gh/fawazahmed0/hadith-api@1","https://raw.githubusercontent.com/fawazahmed0/hadith-api/1"];
+const HC={bukhari:["ara-bukhari","صحیح البخاری",97,1,"خ"],muslim:["ara-muslim","صحیح مسلم",56,0,"م"]};
+const esc=s=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+async function hget(p){
+  HLOG=[];
+  for(const b of HB)for(const x of [".min.json",".json"]){
+    const host=b.split("/")[2];
+    try{
+      const r=await Promise.race([fetch(b+p+x),new Promise((_,j)=>setTimeout(()=>j(new Error("timeout")),8000))]);
+      if(r.ok)return await r.json();
+      HLOG.push(host+" "+r.status);
+    }catch(e){HLOG.push(host+" "+(e&&(e.message==="timeout"?"timeout":e.name)||"error"))}
+  }
+  throw new Error("hadith");
+}
+function tabs(m){document.querySelectorAll("[data-tab]").forEach(b=>b.classList.toggle("on",b.dataset.tab===m))}
 function route(n){
   if(!Q)return;
-  if(n===undefined)n=+location.hash.slice(1);
-  const ok=n>=1&&n<=114;
+  if(n===undefined)n=location.hash.slice(1);
+  n=String(n);
+  if(n[0]==="h")return hRoute(n);
+  HT++;n=+n;const ok=n>=1&&n<=114;
+  $("#hsrc").hidden=true;$("#src").hidden=false;tabs("q");
   $("#hero").hidden=ok;$("#grid").hidden=ok;$("#reader").hidden=!ok;
-  if(ok)read(n);else document.title="قورئانا پیرۆز";
+  if(ok)read(n);else{list($("#q").value);document.title="قورئانا پیرۆز"}
   scrollTo(0,0);
 }
-function go(n){try{history.pushState(null,"",n?"#"+n:location.pathname+location.search)}catch(e){}route(n)}
-document.addEventListener("click",e=>{const a=e.target.closest("[data-go]");if(a){e.preventDefault();go(+a.dataset.go)}});
+function hRoute(p){
+  const [,c,s]=p.split("/"),tok=++HT,G=$("#grid");
+  document.title="حەدیس — قورئانا پیرۆز";
+  $("#hero").hidden=true;$("#src").hidden=true;$("#hsrc").hidden=false;tabs("h");scrollTo(0,0);
+  if(HC[c]&&s!==undefined){G.hidden=true;$("#reader").hidden=false;return hSec(c,+s,tok)}
+  $("#reader").hidden=true;G.hidden=false;
+  if(!HC[c]){
+    G.innerHTML=`<p class="muted" style="grid-column:1/-1">صحیح البخاری و صحیح مسلم، دوو کتێبێن صحیح یێن حەدیسێ نە.</p>`+Object.entries(HC).map(([k,v])=>`<a class="card" href="#h/${k}" data-go="h/${k}"><span class="num"><i>${v[4]}</i></span><span><span class="nm">${v[1]}</span><small>${AR(v[2])} کتێب</small></span></a>`).join("");
+    return;
+  }
+  const v=HC[c];let t=`<a class="back" style="grid-column:1/-1" href="#h" data-go="h">حەدیس</a>`;
+  for(let i=v[3];i<=v[2];i++)t+=`<a class="card" href="#h/${c}/${i}" data-go="h/${c}/${i}"><span class="num"><i>${i?AR(i):"•"}</i></span><span><span class="nm">${i?"کتێب "+AR(i):"پێشەکی"}</span></span></a>`;
+  G.innerHTML=t;
+}
+async function hSec(c,n,tok){
+  const v=HC[c],R=$("#reader"),back=`<a class="back" href="#h/${c}" data-go="h/${c}">${v[1]}</a>`;
+  R.innerHTML=back+`<p class="muted">دهێتە بارکرن…</p>`;
+  try{
+    const j=await hget(`/editions/${v[0]}/sections/${n}`);
+    if(tok!==HT)return;
+    const nm=Object.values(j.metadata.section||{})[0]||"";
+    R.innerHTML=back+`<h2 class="sh sm" dir="auto">${AR(n)} — ${esc(nm)}</h2>`
+      +j.hadiths.map(x=>`<article class="hd"><b class="hn">${AR(x.hadithnumber)}</b><p dir="rtl">${esc(x.text)}</p></article>`).join("")
+      +`<nav class="pn">${n>v[3]?`<a href="#h/${c}/${n-1}" data-go="h/${c}/${n-1}">‹ کتێبا پێشتر</a>`:"<i></i>"}${n<v[2]?`<a href="#h/${c}/${n+1}" data-go="h/${c}/${n+1}">کتێبا پاشتر ›</a>`:"<i></i>"}</nav>`;
+  }catch(e){
+    if(tok===HT)R.innerHTML=back+`<p>نەهاتە بارکرن. ئینتەرنێتا خۆ بپشکنە و دووبارە هەول بدە.</p><p><a class="btn" href="#h/${c}/${n}" data-go="h/${c}/${n}">دووبارە هەول بدە</a></p><small class="muted" dir="ltr">${esc(HLOG.join(" · "))}</small>`;
+  }
+}
+function go(n){n=String(n);try{history.pushState(null,"",n!=="0"?"#"+n:location.pathname+location.search)}catch(e){}route(n)}
+document.addEventListener("click",e=>{const a=e.target.closest("[data-go]");if(a){e.preventDefault();go(a.dataset.go)}});
 addEventListener("popstate",()=>route());
 addEventListener("hashchange",()=>route());
 init();
